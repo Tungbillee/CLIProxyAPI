@@ -415,6 +415,8 @@ func (m *Manager) executeWithProvider(ctx context.Context, provider string, req 
 		execReq.Model, execReq.Metadata = rewriteModelForAuth(routeModel, req.Metadata, auth)
 		execReq.Model, execReq.Metadata = m.applyOAuthModelMapping(auth, execReq.Model, execReq.Metadata)
 		resp, errExec := executor.Execute(execCtx, auth, execReq, opts)
+		// Release concurrency slot after request completes
+		m.releaseCredential(auth.ID)
 		result := Result{AuthID: auth.ID, Provider: provider, Model: routeModel, Success: errExec == nil}
 		if errExec != nil {
 			result.Error = &Error{Message: errExec.Error()}
@@ -477,6 +479,8 @@ func (m *Manager) executeCountWithProvider(ctx context.Context, provider string,
 		execReq.Model, execReq.Metadata = rewriteModelForAuth(routeModel, req.Metadata, auth)
 		execReq.Model, execReq.Metadata = m.applyOAuthModelMapping(auth, execReq.Model, execReq.Metadata)
 		resp, errExec := executor.CountTokens(execCtx, auth, execReq, opts)
+		// Release concurrency slot after request completes
+		m.releaseCredential(auth.ID)
 		result := Result{AuthID: auth.ID, Provider: provider, Model: routeModel, Success: errExec == nil}
 		if errExec != nil {
 			result.Error = &Error{Message: errExec.Error()}
@@ -540,6 +544,8 @@ func (m *Manager) executeStreamWithProvider(ctx context.Context, provider string
 		execReq.Model, execReq.Metadata = m.applyOAuthModelMapping(auth, execReq.Model, execReq.Metadata)
 		chunks, errStream := executor.ExecuteStream(execCtx, auth, execReq, opts)
 		if errStream != nil {
+			// Release concurrency slot on stream error
+			m.releaseCredential(auth.ID)
 			rerr := &Error{Message: errStream.Error()}
 			var se cliproxyexecutor.StatusError
 			if errors.As(errStream, &se) && se != nil {
@@ -554,6 +560,8 @@ func (m *Manager) executeStreamWithProvider(ctx context.Context, provider string
 		out := make(chan cliproxyexecutor.StreamChunk)
 		go func(streamCtx context.Context, streamAuth *Auth, streamProvider string, streamChunks <-chan cliproxyexecutor.StreamChunk) {
 			defer close(out)
+			// Release concurrency slot when stream completes
+			defer m.releaseCredential(streamAuth.ID)
 			var failed bool
 			for chunk := range streamChunks {
 				if chunk.Err != nil && !failed {
@@ -1638,4 +1646,17 @@ func (m *Manager) InjectCredentials(req *http.Request, authID string) error {
 		return p.PrepareRequest(req, a)
 	}
 	return nil
+}
+
+// releaseCredential releases a credential's concurrency slot if using ConcurrencyAwareSelector.
+func (m *Manager) releaseCredential(authID string) {
+	if authID == "" {
+		return
+	}
+	m.mu.RLock()
+	sel := m.selector
+	m.mu.RUnlock()
+	if cas, ok := sel.(*ConcurrencyAwareSelector); ok && cas != nil {
+		cas.Release(authID)
+	}
 }

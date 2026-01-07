@@ -141,8 +141,13 @@ type QuotaExceeded struct {
 // RoutingConfig configures how credentials are selected for requests.
 type RoutingConfig struct {
 	// Strategy selects the credential selection strategy.
-	// Supported values: "round-robin" (default), "fill-first".
+	// Supported values: "round-robin" (default), "fill-first", "concurrency-aware".
 	Strategy string `yaml:"strategy,omitempty" json:"strategy,omitempty"`
+
+	// MaxConcurrentPerCredential limits concurrent requests per credential.
+	// Used with "concurrency-aware" strategy to prevent rate limiting.
+	// Default: 2 (matches Gemini/Antigravity free tier limit of ~2 RPM).
+	MaxConcurrentPerCredential int `yaml:"max-concurrent-per-credential,omitempty" json:"max-concurrent-per-credential,omitempty"`
 }
 
 // ModelNameMapping defines a model ID rename mapping for a specific channel.

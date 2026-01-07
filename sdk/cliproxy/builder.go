@@ -12,6 +12,7 @@ import (
 	sdkAuth "github.com/router-for-me/CLIProxyAPI/v6/sdk/auth"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/auth"
 	"github.com/router-for-me/CLIProxyAPI/v6/sdk/config"
+	log "github.com/sirupsen/logrus"
 )
 
 // Builder constructs a Service instance with customizable providers.
@@ -200,15 +201,22 @@ func (b *Builder) Build() (*Service, error) {
 		}
 
 		strategy := ""
+		maxConcurrent := 0
 		if b.cfg != nil {
 			strategy = strings.ToLower(strings.TrimSpace(b.cfg.Routing.Strategy))
+			maxConcurrent = b.cfg.Routing.MaxConcurrentPerCredential
 		}
 		var selector coreauth.Selector
 		switch strategy {
 		case "fill-first", "fillfirst", "ff":
 			selector = &coreauth.FillFirstSelector{}
+			log.Infof("[Builder] Using FillFirstSelector strategy")
+		case "concurrency-aware", "concurrency", "ca":
+			selector = coreauth.NewConcurrencyAwareSelector(maxConcurrent)
+			log.Infof("[Builder] Using ConcurrencyAwareSelector strategy (maxConcurrent=%d)", maxConcurrent)
 		default:
 			selector = &coreauth.RoundRobinSelector{}
+			log.Infof("[Builder] Using RoundRobinSelector strategy (default, configured: %q)", strategy)
 		}
 
 		coreManager = coreauth.NewManager(tokenStore, selector, nil)

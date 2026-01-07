@@ -111,3 +111,98 @@ func TestRoundRobinSelectorPick_Concurrent(t *testing.T) {
 	default:
 	}
 }
+
+func TestConcurrencyAwareSelectorPick_LimitsPerCredential(t *testing.T) {
+	t.Parallel()
+
+	selector := NewConcurrencyAwareSelector(2) // max 2 concurrent per credential
+	auths := []*Auth{
+		{ID: "a"},
+		{ID: "b"},
+		{ID: "c"},
+	}
+
+	// Pick 6 times (2 per credential)
+	picks := make([]*Auth, 6)
+	for i := 0; i < 6; i++ {
+		got, err := selector.Pick(context.Background(), "gemini", "", cliproxyexecutor.Options{}, auths)
+		if err != nil {
+			t.Fatalf("Pick() #%d error = %v", i, err)
+		}
+		picks[i] = got
+	}
+
+	// Count picks per credential
+	counts := make(map[string]int)
+	for _, auth := range picks {
+		counts[auth.ID]++
+	}
+
+	// Each credential should have exactly 2 picks
+	for id, count := range counts {
+		if count != 2 {
+			t.Errorf("credential %s picked %d times, want 2", id, count)
+		}
+	}
+
+	// 7th pick should fail (all at capacity)
+	_, err := selector.Pick(context.Background(), "gemini", "", cliproxyexecutor.Options{}, auths)
+	if err == nil {
+		t.Fatal("Pick() #7 expected error, got nil")
+	}
+
+	// Release one slot
+	selector.Release("a")
+
+	// Now should be able to pick again
+	got, err := selector.Pick(context.Background(), "gemini", "", cliproxyexecutor.Options{}, auths)
+	if err != nil {
+		t.Fatalf("Pick() after release error = %v", err)
+	}
+	if got.ID != "a" {
+		t.Errorf("Pick() after release got %s, want a", got.ID)
+	}
+}
+
+func TestConcurrencyAwareSelectorPick_Concurrent(t *testing.T) {
+	selector := NewConcurrencyAwareSelector(2)
+	auths := []*Auth{
+		{ID: "a"},
+		{ID: "b"},
+		{ID: "c"},
+	}
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	errCh := make(chan error, 1)
+	successCount := make(chan int, 1)
+
+	goroutines := 10
+	success := 0
+	var mu sync.Mutex
+
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			got, err := selector.Pick(context.Background(), "gemini", "", cliproxyexecutor.Options{}, auths)
+			if err == nil && got != nil {
+				mu.Lock()
+				success++
+				mu.Unlock()
+			}
+		}()
+	}
+
+	close(start)
+	wg.Wait()
+
+	// Should have exactly 6 successful picks (3 credentials * 2 max concurrent)
+	if success != 6 {
+		t.Errorf("concurrent Pick() success = %d, want 6", success)
+	}
+
+	close(errCh)
+	close(successCount)
+}

@@ -310,6 +310,7 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
 // It defines the endpoints and associates them with their respective handlers.
 func (s *Server) setupRoutes() {
 	s.engine.GET("/management.html", s.serveManagementControlPanel)
+	s.engine.GET("/chat.html", s.serveChatUI)
 	openaiHandlers := openai.NewOpenAIAPIHandler(s.handlers)
 	geminiHandlers := gemini.NewGeminiAPIHandler(s.handlers)
 	geminiCLIHandlers := gemini.NewGeminiCLIAPIHandler(s.handlers)
@@ -633,6 +634,27 @@ func (s *Server) serveManagementControlPanel(c *gin.Context) {
 		}
 
 		log.WithError(err).Error("failed to stat management control panel asset")
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	c.File(filePath)
+}
+
+func (s *Server) serveChatUI(c *gin.Context) {
+	staticDir := managementasset.StaticDir(s.configFilePath)
+	if staticDir == "" {
+		c.AbortWithStatus(http.StatusNotFound)
+		return
+	}
+
+	filePath := filepath.Join(staticDir, "chat.html")
+	if _, err := os.Stat(filePath); err != nil {
+		if os.IsNotExist(err) {
+			c.AbortWithStatus(http.StatusNotFound)
+			return
+		}
+		log.WithError(err).Error("failed to stat chat UI asset")
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}

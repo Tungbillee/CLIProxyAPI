@@ -1,0 +1,17 @@
+CLIProxyAPI Version: dev, Commit: none, BuiltAt: unknown
+[2026-01-03 11:58:27] [--------] [info ] [main.go:413] CLIProxyAPI Version: dev, Commit: none, BuiltAt: unknown
+[2026-01-03 11:58:27] [--------] [info ] [service.go:666] created missing auth directory: /Users/tungpc/.cli-proxy-api
+API server started successfully on: :8317
+server clients and configuration updated: 0 clients (0 auth entries + 0 Gemini API keys + 0 Claude API keys + 0 Codex keys + 0 Vertex-compat + 0 OpenAI-compat)
+[2026-01-03 11:58:27] [--------] [info ] [clients.go:104] full client load complete - 0 clients (0 auth files + 0 Gemini API keys + 0 Vertex API keys + 0 Claude API keys + 0 Codex keys + 0 OpenAI-compat)
+[2026-01-03 11:58:27] [--------] [info ] [service.go:577] file watcher started for config and auth directory changes
+[2026-01-03 11:58:27] [--------] [info ] [service.go:583] core auth auto-refresh started (interval=15m0s)
+[2026-01-03 11:58:29] [--------] [info ] [updater.go:280] management asset updated successfully (hash=2fa1c275089a9d152c25dd695b8a1d59fff590e476591b80d9ef9e4ebce2e408)
+[2026-01-03 11:58:45] [--------] [info ] [gin_logger.go:92] 200 |            0s |             ::1 | GET     "/"
+[2026-01-03 11:58:51] [--------] [warn ] [gin_logger.go:90] 401 |            0s |             ::1 | GET     "/v1/models"
+[2026-01-03 11:59:01] [--------] [info ] [gin_logger.go:92] 200 |            0s |             ::1 | GET     "/v1/models"
+[2026-01-03 12:00:23] [--------] [info ] [gin_logger.go:92] 200 |            0s |             ::1 | GET     "/"
+[2026-01-03 12:03:38] [--------] [info ] [config_reload.go:64] config file changed, reloading: config.yaml
+[2026-01-03 12:03:38] [--------] [info ] [config_reload.go:132] config successfully reloaded, triggering client reload
+server clients and configuration updated: 0 clients (0 auth entries + 0 Gemini API keys + 0 Claude API keys + 0 Codex keys + 0 Vertex-compat + 0 OpenAI-compat)
+[2026-01-03 12:03:38] [--------] [info ] [clients.go:104] full client load complete - 0 clients (0 auth files + 0 Gemini API keys + 0 Vertex API keys + 0 Claude API keys + 0 Codex keys + 0 OpenAI-compat)

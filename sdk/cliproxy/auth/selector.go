@@ -12,6 +12,7 @@ import (
 	"time"
 
 	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/executor"
+	log "github.com/sirupsen/logrus"
 )
 
 // RoundRobinSelector provides a simple provider scoped round-robin selection strategy.
@@ -24,6 +25,114 @@ type RoundRobinSelector struct {
 // This "burns" one account before moving to the next, which can help stagger
 // rolling-window subscription caps (e.g. chat message limits).
 type FillFirstSelector struct{}
+
+// ConcurrencyAwareSelector extends round-robin with per-credential concurrency limits.
+// It prevents rate limiting by tracking active requests per credential and selecting
+// credentials with available capacity.
+type ConcurrencyAwareSelector struct {
+	mu            sync.Mutex
+	cursors       map[string]int
+	activeCount   map[string]int           // authID -> current active requests
+	maxConcurrent int                      // max concurrent requests per credential
+	waitTimeout   time.Duration            // timeout for waiting when all at capacity
+}
+
+// NewConcurrencyAwareSelector creates a selector that limits concurrent requests per credential.
+// maxConcurrent: max parallel requests per credential (default: 2 for Gemini/Antigravity free tier)
+func NewConcurrencyAwareSelector(maxConcurrent int) *ConcurrencyAwareSelector {
+	if maxConcurrent <= 0 {
+		maxConcurrent = 2
+	}
+	return &ConcurrencyAwareSelector{
+		cursors:       make(map[string]int),
+		activeCount:   make(map[string]int),
+		maxConcurrent: maxConcurrent,
+		waitTimeout:   5 * time.Second,
+	}
+}
+
+// Pick selects the next available auth with capacity for concurrent requests.
+// It prioritizes credentials with fewer active requests.
+func (s *ConcurrencyAwareSelector) Pick(ctx context.Context, provider, model string, opts cliproxyexecutor.Options, auths []*Auth) (*Auth, error) {
+	_ = opts
+	now := time.Now()
+	available, err := getAvailableAuths(auths, provider, model, now)
+	if err != nil {
+		return nil, err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.cursors == nil {
+		s.cursors = make(map[string]int)
+	}
+	if s.activeCount == nil {
+		s.activeCount = make(map[string]int)
+	}
+
+	// Sort by active count (least loaded first), then by ID for stability
+	sorted := make([]*Auth, len(available))
+	copy(sorted, available)
+	sort.Slice(sorted, func(i, j int) bool {
+		countI := s.activeCount[sorted[i].ID]
+		countJ := s.activeCount[sorted[j].ID]
+		if countI != countJ {
+			return countI < countJ
+		}
+		return sorted[i].ID < sorted[j].ID
+	})
+
+	// Find first credential with capacity
+	for _, auth := range sorted {
+		if s.activeCount[auth.ID] < s.maxConcurrent {
+			s.activeCount[auth.ID]++
+			log.Debugf("[ConcurrencyAwareSelector] Picked auth %s (active: %d/%d, total available: %d)",
+				auth.ID, s.activeCount[auth.ID], s.maxConcurrent, len(available))
+			return auth, nil
+		}
+	}
+
+	// All credentials at capacity - return rate limit error
+	return nil, newModelCooldownError(model, provider, s.waitTimeout)
+}
+
+// Release decrements the active count for a credential after request completes.
+// Must be called after each successful Pick to free up capacity.
+func (s *ConcurrencyAwareSelector) Release(authID string) {
+	if authID == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.activeCount == nil {
+		return
+	}
+	if count, ok := s.activeCount[authID]; ok && count > 0 {
+		s.activeCount[authID] = count - 1
+	}
+}
+
+// ActiveCount returns the current active request count for a credential.
+func (s *ConcurrencyAwareSelector) ActiveCount(authID string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.activeCount == nil {
+		return 0
+	}
+	return s.activeCount[authID]
+}
+
+// TotalActive returns the total active requests across all credentials.
+func (s *ConcurrencyAwareSelector) TotalActive() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	total := 0
+	for _, count := range s.activeCount {
+		total += count
+	}
+	return total
+}
 
 type blockReason int
 

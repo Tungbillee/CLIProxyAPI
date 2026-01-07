@@ -527,6 +527,8 @@ func (s *Service) Run(ctx context.Context) error {
 			switch strategy {
 			case "fill-first", "fillfirst", "ff":
 				return "fill-first"
+			case "concurrency-aware", "concurrency", "ca":
+				return "concurrency-aware"
 			default:
 				return "round-robin"
 			}
@@ -538,6 +540,8 @@ func (s *Service) Run(ctx context.Context) error {
 			switch nextStrategy {
 			case "fill-first":
 				selector = &coreauth.FillFirstSelector{}
+			case "concurrency-aware":
+				selector = coreauth.NewConcurrencyAwareSelector(newCfg.Routing.MaxConcurrentPerCredential)
 			default:
 				selector = &coreauth.RoundRobinSelector{}
 			}
